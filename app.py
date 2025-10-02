@@ -96,7 +96,7 @@ if client and generate_button and canvas_result.image_data is not None:
                 prompt_text = f"{description}. Recréalo en estilo {style.lower()}."
 
                 result = client.images.generate(
-                    model="dall-e-2",
+                    model="dall-e-3",
                     prompt=prompt_text,
                     size="1024x1024"
                 )
