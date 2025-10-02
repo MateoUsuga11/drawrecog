@@ -80,7 +80,7 @@ if canvas_result.image_data is not None and client and generate_button:
                     model="gpt-image-1",
                     image=boceto_file,
                     prompt=prompt_text,
-                    size="512x512",   # puedes cambiar a "1024x1024" para más calidad
+                    size="1024x1024",   # puedes cambiar a "1024x1024" para más calidad
                     output_format="png"
                 )
 
