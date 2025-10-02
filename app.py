@@ -1,4 +1,6 @@
 import os
+import io
+import base64
 import streamlit as st
 import numpy as np
 from PIL import Image
@@ -7,11 +9,11 @@ from openai import OpenAI
 
 # ====== Configuración de la app ======
 st.set_page_config(page_title='Tablero Inteligente con Estilos')
-st.title('🎨 Tablero Inteligente con Estilos (DALL·E 2)')
+st.title('🎨 Tablero Inteligente (Imagen → Texto → Estilo)')
 
 with st.sidebar:
     st.subheader("ℹ️ Acerca de:")
-    st.write("Esta aplicación permite dibujar un boceto y generar una ilustración en distintos estilos usando IA (DALL·E 2).")
+    st.write("Esta aplicación convierte tu boceto en una descripción con IA, y luego genera una ilustración en el estilo que elijas usando DALL·E 2.")
     st.write("---")
 
     # Personalización del canvas
@@ -28,7 +30,7 @@ st.subheader("🎨 Elige el estilo de la imagen generada")
 style = st.selectbox("Estilo:", ["Anime", "Realista", "Pixel Art", "Acuarela", "Cómic", "Minimalista"])
 
 # ====== Canvas ======
-st.subheader("✏️ Dibuja tu boceto (opcional)")
+st.subheader("✏️ Dibuja tu boceto")
 canvas_result = st_canvas(
     fill_color="rgba(255, 165, 0, 0.3)",  
     stroke_width=stroke_width,
@@ -49,35 +51,63 @@ else:
     client = None
 
 # ====== Botón para generar ======
-generate_button = st.button("✨ Generar imagen con estilo")
+generate_button = st.button("✨ Convertir boceto a ilustración con estilo")
 
-# ====== Proceso de generación ======
-if client and generate_button:
-    with st.spinner("Generando imagen con IA..."):
+# ====== Flujo completo ======
+if client and generate_button and canvas_result.image_data is not None:
+    with st.spinner("Analizando boceto con IA..."):
+        # Guardar boceto como PNG
+        input_numpy_array = np.array(canvas_result.image_data)
+        input_image = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
+        input_image.save('boceto.png')
+
+        # Convertir imagen a base64
+        with open("boceto.png", "rb") as f:
+            image_bytes = f.read()
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+
+        # 1️⃣ Pedir a GPT-4o-mini que describa la imagen
         try:
-            # Prompt: tomamos el estilo y añadimos instrucción
-            prompt_text = f"Una ilustración en estilo {style.lower()} de un boceto simple."
-
-            # Si el usuario dibujó algo en el canvas, lo tomamos como referencia textual
-            if canvas_result.image_data is not None:
-                prompt_text += " El boceto representa un dibujo hecho a mano que debe ser reinterpretado en ese estilo."
-
-            # Generar imagen con DALL·E 2
-            result = client.images.generate(
-                model="dall-e-2",     
-                prompt=prompt_text,
-                size="1024x1024"   # valores válidos: 256x256, 512x512, 1024x1024
+            response_desc = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Describe en detalle esta imagen en español."},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
+                        ],
+                    }
+                ],
+                max_tokens=200
             )
-
-            # DALL·E devuelve una URL
-            image_url = result.data[0].url
-
-            # Mostrar en la app
-            st.image(image_url, caption=f"Imagen generada en estilo {style}", use_column_width=True)
-            st.write("🔗 [Abrir imagen en otra pestaña](" + image_url + ")")
+            description = response_desc.choices[0].message.content
+            st.success("✅ Descripción generada por IA:")
+            st.write(description)
 
         except Exception as e:
-            st.error(f"Ocurrió un error al generar la imagen: {e}")
+            st.error(f"Error al describir la imagen: {e}")
+            description = None
+
+    if description:
+        with st.spinner("Generando ilustración con estilo..."):
+            try:
+                # 2️⃣ Pasar la descripción como prompt a DALL·E 2
+                prompt_text = f"{description}. Recréalo en estilo {style.lower()}."
+
+                result = client.images.generate(
+                    model="dall-e-2",
+                    prompt=prompt_text,
+                    size="1024x1024"
+                )
+
+                # Mostrar imagen final (URL)
+                image_url = result.data[0].url
+                st.image(image_url, caption=f"Imagen generada en estilo {style}", use_column_width=True)
+                st.write("🔗 [Abrir imagen en otra pestaña](" + image_url + ")")
+
+            except Exception as e:
+                st.error(f"Error al generar la ilustración: {e}")
 else:
     if not ke:
         st.warning("⚠️ Por favor ingresa tu API Key de OpenAI.")
