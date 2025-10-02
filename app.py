@@ -77,7 +77,7 @@ if canvas_result.image_data is not None and client and generate_button:
             with open("boceto.png", "rb") as boceto_file:
                 # Usamos la API de edición de imágenes
                 result = client.images.edit(
-                    model="gpt-image-1",
+                    model="dall-e-3",
                     image=boceto_file,
                     prompt=prompt_text,
                     size="1024x1024",   # puedes cambiar a "1024x1024" para más calidad
