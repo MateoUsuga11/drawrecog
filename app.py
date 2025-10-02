@@ -1,12 +1,13 @@
 import os
-import streamlit as st
+import io
 import base64
-import openai
+import streamlit as st
 import numpy as np
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
+from openai import OpenAI
 
-# ====== Función para codificar imagen ======
+# ====== Función para codificar imagen (opcional si quieres debug) ======
 def encode_image_to_base64(image_path):
     try:
         with open(image_path, "rb") as image_file:
@@ -16,16 +17,16 @@ def encode_image_to_base64(image_path):
         return "Error: La imagen no se encontró en la ruta especificada."
 
 # ====== Configuración de la app ======
-st.set_page_config(page_title='Tablero Inteligente')
-st.title('🎨 Tablero Inteligente con Estilo')
+st.set_page_config(page_title='Tablero Inteligente con Estilo')
+st.title('🎨 Tablero Inteligente con Estilos de IA')
 
 with st.sidebar:
-    st.subheader("Acerca de:")
-    st.write("Esta app convierte tu boceto en una imagen con el estilo que elijas usando IA.")
+    st.subheader("ℹ️ Acerca de:")
+    st.write("Esta aplicación permite dibujar un boceto y transformarlo en una ilustración con distintos estilos usando IA.")
     st.write("---")
 
     # Personalización del canvas
-    st.subheader("🎛 Opciones de Canvas")
+    st.subheader("🎛 Opciones del Canvas")
     canvas_width = st.number_input("Ancho del Canvas (px)", min_value=200, max_value=1200, value=400, step=50)
     canvas_height = st.number_input("Alto del Canvas (px)", min_value=200, max_value=800, value=300, step=50)
     
@@ -34,8 +35,8 @@ with st.sidebar:
     bg_color = st.color_picker("Color de fondo", "#FFFFFF")
 
 # Selección de estilo
-st.subheader("Elige el estilo de la imagen generada")
-style = st.selectbox("🎨 Estilo:", ["Anime", "Realista", "Pixel Art", "Acuarela", "Cómic", "Minimalista"])
+st.subheader("🎨 Elige el estilo de la imagen generada")
+style = st.selectbox("Estilo:", ["Anime", "Realista", "Pixel Art", "Acuarela", "Cómic", "Minimalista"])
 
 # ====== Canvas ======
 st.subheader("✏️ Dibuja tu boceto")
@@ -52,41 +53,55 @@ canvas_result = st_canvas(
 
 # ====== API Key ======
 ke = st.text_input('🔑 Ingresa tu API Key de OpenAI', type="password")
-os.environ['OPENAI_API_KEY'] = ke
-api_key = os.environ['OPENAI_API_KEY']
+if ke:
+    os.environ['OPENAI_API_KEY'] = ke
+    client = OpenAI(api_key=ke)
+else:
+    client = None
 
 # ====== Botón para generar ======
 generate_button = st.button("✨ Generar imagen con estilo")
 
-if canvas_result.image_data is not None and api_key and generate_button:
+# ====== Proceso de análisis ======
+if canvas_result.image_data is not None and client and generate_button:
     with st.spinner("Generando imagen con IA..."):
-        # Guardar boceto
-        input_numpy_array = np.array(canvas_result.image_data)
-        input_image = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
-        input_image.save('boceto.png')
-        
-        base64_image = encode_image_to_base64("boceto.png")
-
-        # Crear prompt con estilo elegido
-        prompt_text = f"Convierte este boceto en una ilustración con estilo {style.lower()}."
-
         try:
-            response = openai.images.generate(
-                model="gpt-image-1",
-                prompt=prompt_text,
-                size="512x512",
-                image=[{"b64_json": base64_image}],
-            )
+            # Guardar boceto como PNG
+            input_numpy_array = np.array(canvas_result.image_data)
+            input_image = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
+            input_image.save('boceto.png')
 
-            # Decodificar y mostrar imagen
-            image_base64 = response.data[0].b64_json
-            image_bytes = base64.b64decode(image_base64)
+            # Prompt con el estilo elegido
+            prompt_text = f"Convierte este boceto en una ilustración con estilo {style.lower()}."
+
+            with open("boceto.png", "rb") as boceto_file:
+                # Usamos la API de edición de imágenes
+                result = client.images.edit(
+                    model="gpt-image-1",
+                    image=boceto_file,
+                    prompt=prompt_text,
+                    size="512x512",   # puedes cambiar a "1024x1024" para más calidad
+                    output_format="png"
+                )
+
+            # Decodificar resultado
+            image_b64 = result.data[0].b64_json
+            image_bytes = base64.b64decode(image_b64)
             output_image = Image.open(io.BytesIO(image_bytes))
 
+            # Mostrar resultado
             st.image(output_image, caption=f"Imagen generada en estilo {style}", use_column_width=True)
 
+            # Botón de descarga
+            st.download_button(
+                label="⬇️ Descargar imagen",
+                data=image_bytes,
+                file_name=f"boceto_{style.lower()}.png",
+                mime="image/png"
+            )
+
         except Exception as e:
-            st.error(f"Ocurrió un error: {e}")
+            st.error(f"Ocurrió un error al generar la imagen: {e}")
 else:
-    if not api_key:
-        st.warning("⚠️ Por favor ingresa tu API key.")
+    if not ke:
+        st.warning("⚠️ Por favor ingresa tu API Key de OpenAI.")
