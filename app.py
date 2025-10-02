@@ -1,28 +1,17 @@
 import os
-import io
-import base64
 import streamlit as st
 import numpy as np
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 from openai import OpenAI
 
-# ====== Función para codificar imagen (opcional si quieres debug) ======
-def encode_image_to_base64(image_path):
-    try:
-        with open(image_path, "rb") as image_file:
-            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
-            return encoded_image
-    except FileNotFoundError:
-        return "Error: La imagen no se encontró en la ruta especificada."
-
 # ====== Configuración de la app ======
-st.set_page_config(page_title='Tablero Inteligente con Estilo')
-st.title('🎨 Tablero Inteligente con Estilos de IA')
+st.set_page_config(page_title='Tablero Inteligente con Estilos')
+st.title('🎨 Tablero Inteligente con Estilos (DALL·E 2)')
 
 with st.sidebar:
     st.subheader("ℹ️ Acerca de:")
-    st.write("Esta aplicación permite dibujar un boceto y transformarlo en una ilustración con distintos estilos usando IA.")
+    st.write("Esta aplicación permite dibujar un boceto y generar una ilustración en distintos estilos usando IA (DALL·E 2).")
     st.write("---")
 
     # Personalización del canvas
@@ -39,7 +28,7 @@ st.subheader("🎨 Elige el estilo de la imagen generada")
 style = st.selectbox("Estilo:", ["Anime", "Realista", "Pixel Art", "Acuarela", "Cómic", "Minimalista"])
 
 # ====== Canvas ======
-st.subheader("✏️ Dibuja tu boceto")
+st.subheader("✏️ Dibuja tu boceto (opcional)")
 canvas_result = st_canvas(
     fill_color="rgba(255, 165, 0, 0.3)",  
     stroke_width=stroke_width,
@@ -62,41 +51,30 @@ else:
 # ====== Botón para generar ======
 generate_button = st.button("✨ Generar imagen con estilo")
 
-# ====== Proceso de análisis ======
-if canvas_result.image_data is not None and client and generate_button:
+# ====== Proceso de generación ======
+if client and generate_button:
     with st.spinner("Generando imagen con IA..."):
         try:
-            # Guardar boceto como PNG
-            input_numpy_array = np.array(canvas_result.image_data)
-            input_image = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
-            input_image.save('boceto.png')
+            # Prompt: tomamos el estilo y añadimos instrucción
+            prompt_text = f"Una ilustración en estilo {style.lower()} de un boceto simple."
 
-            # Prompt con el estilo elegido
-            prompt_text = f"Convierte este boceto en una ilustración con estilo {style.lower()}."
+            # Si el usuario dibujó algo en el canvas, lo tomamos como referencia textual
+            if canvas_result.image_data is not None:
+                prompt_text += " El boceto representa un dibujo hecho a mano que debe ser reinterpretado en ese estilo."
 
-            with open("boceto.png", "rb") as boceto_file:
-                # Usamos la API de edición de imágenes
-                result = client.images.generate(
-                    model="dall-e-2",    # o "dall-e-3" si tu cuenta lo soporta
-                    prompt=prompt_text,
-                    size="1024x1024"     # valores válidos: "256x256", "512x512", "1024x1024"
-                )
-
-            # Decodificar resultado
-            image_b64 = result.data[0].b64_json
-            image_bytes = base64.b64decode(image_b64)
-            output_image = Image.open(io.BytesIO(image_bytes))
-
-            # Mostrar resultado
-            st.image(output_image, caption=f"Imagen generada en estilo {style}", use_column_width=True)
-
-            # Botón de descarga
-            st.download_button(
-                label="⬇️ Descargar imagen",
-                data=image_bytes,
-                file_name=f"boceto_{style.lower()}.png",
-                mime="image/png"
+            # Generar imagen con DALL·E 2
+            result = client.images.generate(
+                model="dall-e-2",     
+                prompt=prompt_text,
+                size="1024x1024"   # valores válidos: 256x256, 512x512, 1024x1024
             )
+
+            # DALL·E devuelve una URL
+            image_url = result.data[0].url
+
+            # Mostrar en la app
+            st.image(image_url, caption=f"Imagen generada en estilo {style}", use_column_width=True)
+            st.write("🔗 [Abrir imagen en otra pestaña](" + image_url + ")")
 
         except Exception as e:
             st.error(f"Ocurrió un error al generar la imagen: {e}")
